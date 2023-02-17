@@ -31,8 +31,9 @@ using namespace RigidBodyDynamics::Math;
 void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, int body_id,
 			std::vector<SpatialVector>& fext, const Matrix3d& rotate_y){
 	auto V_inertial = CalcPointVelocity(model, Q, QDot, body_id, {0, 0, 0}, true);
-	auto V_local = CalcBodyWorldOrientation(model, Q, body_id, true) * V_inertial;////////////////////////////////
-	V_inertial.normalize();
+	auto MatWorld2Body = CalcBodyWorldOrientation(model, Q, body_id, false);
+	auto V_local = MatWorld2Body * V_inertial;// CalcBodyWorldOrientation
+	Vector3d V_local_proj{V_local[0], 0, V_local[2]};
 	double angle_of_attack;
 	if(V_local[0] == 0){
 		double angle_of_attack = atan(INFINITY);
@@ -46,10 +47,22 @@ void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, int body_id,
 	if(body_id == 7){
 		area = flapping_model::tail_area;
 	}
-	double F_l = 2.0 / 3.0 * C_l * flapping_model::p * area * (V_local[0] * V_local[0] + V_local[2] * V_local[2]);
-	double F_d = 2.0 / 3.0 * C_d * flapping_model::p * area * (V_local[0] * V_local[0] + V_local[2] * V_local[2]);
-	auto F = F_l * rotate_y * V_inertial - F_d * V_inertial;
-	std::cout << "F: " << F << std::endl;
+	double F_l = 2.0 / 3.0 * C_l * flapping_model::p * area * (V_local_proj.norm() * V_local_proj.norm());
+	double F_d = 2.0 / 3.0 * C_d * flapping_model::p * area * (V_local_proj.norm() * V_local_proj.norm());
+
+	auto pos = CalcBodyToBaseCoordinates(model, Q, body_id, {0, 0, 0}, false);
+	std::cout << "pos: " << pos << std::endl;
+	Matrix3d D;
+	D << 0, -pos[2], pos[1], pos[2], 0, -pos[0], -pos[1], pos[0], 0;
+
+	auto F = F_l * MatWorld2Body.transpose() * (rotate_y * V_local_proj.normalized())
+			- F_d * (MatWorld2Body.transpose() * V_local_proj).normalized();
+	// std::cout << "F: " << F << std::endl;
+	auto T = D * F;
+	// std::cout << "T: " << T << std::endl;
+	fext[body_id][0] = T[0];
+	fext[body_id][1] = T[1];
+	fext[body_id][2] = T[2];
 	fext[body_id][3] = F[0];
 	fext[body_id][4] = F[1];
 	fext[body_id][5] = F[2];
