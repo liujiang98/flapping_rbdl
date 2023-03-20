@@ -50,14 +50,14 @@ void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, const char* bod
 	}
 	// 惯性系下的速度
 	Vector3d V_inertial = CalcPointVelocity(model, Q, QDot, body_id, body_pos, true);
-	// std::cout << "V_inertial: " << V_inertial.transpose() << std::endl;
+	std::cout << "V_inertial: " << V_inertial.transpose() << std::endl;
 	Matrix3d MatWorld2Body = CalcBodyWorldOrientation(model, Q, body_id, true);
 	Eigen::Quaterniond q(MatWorld2Body);
 	// 从惯性系到body(local)系下的旋转矩阵
 	MatWorld2Body = q.normalized().toRotationMatrix();
 	// body(local)系下的速度
 	Vector3d V_local = MatWorld2Body * V_inertial;// CalcBodyWorldOrientation
-	// std::cout << "V_local: " << V_local.transpose() << std::endl;
+	std::cout << "V_local: " << V_local.transpose() << std::endl;
 
 	Vector3d V_local_proj{V_local[0], 0, V_local[2]};
 	double x = V_local[2] / V_local[0];
@@ -74,9 +74,11 @@ void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, const char* bod
 		rotate_y(0, 2) = 1;
 		rotate_y(2, 0) = -1;
 	}
-	// std::cout << rotate_y << std::endl;
-	// std::cout << "angle of attack: " << angle_of_attack * 180 / 3.1415 << std::endl;
+	
 	double C_l = flapping_model::C_l0 * std::sin(2 * angle_of_attack);
+	// if(body_id == 7){
+	// 	C_l = 0.0;
+	// }
 	double C_d = flapping_model::D_l0 - flapping_model::D_l1 * std::cos(2 * angle_of_attack);
 	double F_l = 2.0 / 3.0 * C_l * flapping_model::p * area * (V_local_proj.norm() * V_local_proj.norm());
 	double F_d = 2.0 / 3.0 * C_d * flapping_model::p * area * (V_local_proj.norm() * V_local_proj.norm());
@@ -88,10 +90,15 @@ void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, const char* bod
 
 	// body上的点在惯性系下的位置
 	Vector3d pos = CalcBodyToBaseCoordinates(model, Q, body_id, body_pos, true);
-	// std::cout << "D: " << D << std::endl;
+	std::cout << "pos: " << pos.transpose() << std::endl;
+	// Matrix3d D(
+    //       0., -pos[2], pos[1],
+    //       pos[2], 0., -pos[0],
+    //       -pos[1], pos[0], 0.
+    //       );
 	Vector3d F = F_l * MatWorld2Body.transpose() * (rotate_y * V_local_proj.normalized())
 			- F_d * ((MatWorld2Body.transpose() * V_local_proj).normalized());
-	// Vector3d F = F_l * (rotate_y * V_local_proj.normalized()) - F_d * (V_local_proj.normalized());
+	// Vector3d F1 = F_l * (rotate_y * V_local_proj.normalized()) - F_d * (V_local_proj.normalized());
 	if(body_id == model.GetBodyId("left_wing")){
 		all_angle.push_back(angle_of_attack * 180 / 3.1415);
 		Vector3d F_body = F_l * MatWorld2Body.transpose() * (rotate_y * V_local_proj.normalized())
@@ -106,8 +113,10 @@ void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, const char* bod
 	// std::cout << "F1 - F2: " << F_l * (rotate_y * V_local_proj.normalized()) - F_d * (V_local_proj.normalized()) << std::endl;
 	// std::cout << "F1 body: " << (F_l *  MatWorld2Body.transpose() * (rotate_y * V_local_proj.normalized())).transpose() << std::endl;
 	// std::cout << "F2 body: " << (F_d * ((MatWorld2Body.transpose() * V_local_proj).normalized())).transpose() << std::endl;
-	// std::cout << "F: " << F.transpose() << std::endl;
+	std::cout << "F: " << F.transpose() << std::endl;
 	Vector3d T = pos.cross(F);
+	std::cout << "T: " << T.transpose() << std::endl;
+	// std::cout << "D * F: " << (D * F).transpose() << std::endl;
 	fext[body_id][0] = T[0];
 	fext[body_id][1] = T[1];
 	fext[body_id][2] = T[2];
@@ -128,17 +137,18 @@ int main (int argc, char* argv[]) {
 		exit(-1);
 	}
 
-	if (!Addons::URDFReadFromFile (argv[1], model, true, true)) {
+	if (!Addons::URDFReadFromFile (argv[1], model, true, false)) {
 		std::cerr << "Error loading model " << argv[1] << std::endl;
 		abort();
 	}
 
-	std::cout << "Degree of freedom overview:" << std::endl;
-	std::cout << Utils::GetModelDOFOverview(*model);
+	// std::cout << "Degree of freedom overview:" << std::endl;
+	// std::cout << Utils::GetModelDOFOverview(*model);
 
-	std::cout << "Model Hierarchy:" << std::endl;
-	std::cout << Utils::GetModelHierarchy(*model);
-	std::vector<double> wing_f_x, wing_f_z, a_x, alpha_y, tail_alpha_y, a_z, all_theta, body_f_x, body_f_z, all_angle, v_x, v_z;
+	// std::cout << "Model Hierarchy:" << std::endl;
+	// std::cout << Utils::GetModelHierarchy(*model);
+	
+	std::vector<double> wing_f_x, wing_f_z, a_x, alpha_y, wing_t_y, tail_t_y, a_z, all_theta, body_f_x, body_f_z, all_angle, v_x, v_z;
 	for(double theta = 0.0; theta <= 3.14 * 2.0; theta += 3.14 * 2.0 / 50.0){
 		// double theta = 0.0;
 		all_theta.push_back(theta);
@@ -153,7 +163,7 @@ int main (int argc, char* argv[]) {
 
 		VectorNd Q = VectorNd::Zero (model->q_size);
 		Q << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-				theta1, theta2, theta3, theta4, -0.0, 0.0;
+				theta1, theta2, theta3, theta4, 1.0, 0.0;
 
 		VectorNd QDot = VectorNd::Zero (model->qdot_size);
 		QDot << 2.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -174,15 +184,33 @@ int main (int argc, char* argv[]) {
 		CalF(*model, Q, QDot, "left_wing", fext, body_f_x, body_f_z, all_angle, v_x, v_z);
 		CalF(*model, Q, QDot, "right_wing", fext, body_f_x, body_f_z, all_angle, v_x, v_z);
 		CalF(*model, Q, QDot, "tail", fext, body_f_x, body_f_z, all_angle, v_x, v_z);
+		std::cout << "///////////////////////////////" << std::endl;
 		wing_f_x.push_back(fext[model->GetBodyId("left_wing")][3]);
 		wing_f_z.push_back(fext[model->GetBodyId("left_wing")][5]);
-		tail_alpha_y.push_back(fext[model->GetBodyId("tail")][1]);
+		tail_t_y.push_back(fext[model->GetBodyId("tail")][1]);
+		wing_t_y.push_back(fext[model->GetBodyId("left_wing")][1]);
 
-		// fext[model->GetBodyId("left_wing")][5] = 3.2;
+		// fext[model->GetBodyId("left_wing")][1] = 3.2;
 		
 		// fext[model->GetBodyId("body")][5] = 3.2;
-		// fext[model->GetBodyId("right_wing")][5] = 3.2;	
+		// fext[model->GetBodyId("right_wing")][1] = 3.2;
 		ForwardDynamics (*model, Q, QDot, Tau, QDDot, &fext);
+		// for(int i = 1; i < model->mBodies.size(); i++){
+		// 	std::cout << "External force (" << i << ") = " << model->X_base[i].toMatrixAdjoint() * (fext)[i] << std::endl;
+		// 	Vector3d T{fext[i][0], fext[i][1], fext[i][2]};
+		// 	Vector3d F{fext[i][3], fext[i][4], fext[i][5]};
+		// 	// std::cout << "for T: " << T.transpose() << std::endl;
+		// 	std::cout << "T 111: " << model->X_base[i].E * T << std::endl;
+		// 	std::cout << "X base E: " << model->X_base[i].E << std::endl;
+		// 	std::cout << "X base r: " << model->X_base[i].r << std::endl;
+		// 	Matrix3d _Erx =
+		// 		model->X_base[i].E * Matrix3d (
+		// 		0., -model->X_base[i].r[2], model->X_base[i].r[1],
+		// 		model->X_base[i].r[2], 0., -model->X_base[i].r[0],
+		// 		-model->X_base[i].r[1], model->X_base[i].r[0], 0.
+		// 		);
+		// 	std::cout << "T 222: " << _Erx * F << std::endl;
+		// }
 		// ForwardDynamics (*model, Q, QDot, Tau, QDDot); 
 		// std::cout << "after QDDot: " << QDDot.transpose() << std::endl;
 
@@ -214,7 +242,10 @@ int main (int argc, char* argv[]) {
 	plt::legend();
 	plt::subplot(2,3,5);
 	plt::plot(all_theta, alpha_y, {{"label","alpha_y"}});
-	plt::plot(all_theta, tail_alpha_y, {{"label","tail_alpha_y"}});
+	plt::legend();
+	plt::subplot(2,3,6);
+	plt::plot(all_theta, wing_t_y, {{"label","wing_t_y"}});
+	plt::plot(all_theta, tail_t_y, {{"label","tail_t_y"}});
 	plt::legend();
     plt::show();
 
