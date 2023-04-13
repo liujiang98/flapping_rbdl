@@ -34,7 +34,7 @@ namespace flapping_model{
 	const Vector3d tail_pos{-0.10905, 0.0, 0.02466}; //-0.2635, 0, 0.0268   -0.10905, 0.0, 0.02466
 	const double v0 = 2.0;
     const double target_height = 2.0;
-	const double f = 10.0; // 扑翼频率
+	const double f = 12.0; // 扑翼频率
 };
 
 void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, const char* body_name,
@@ -79,9 +79,6 @@ void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, const char* bod
 	// }
 	
 	double C_l = flapping_model::C_l0 * std::sin(2 * angle_of_attack);
-	// if(body_id == 7){
-	// 	C_l = 0.0;
-	// }
 	double C_d = flapping_model::D_l0 - flapping_model::D_l1 * std::cos(2 * angle_of_attack);
 	double F_l = 2.0 / 3.0 * C_l * flapping_model::p * area * (V_local_proj.norm() * V_local_proj.norm());
 	double F_d = 2.0 / 3.0 * C_d * flapping_model::p * area * (V_local_proj.norm() * V_local_proj.norm());
@@ -93,18 +90,19 @@ void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, const char* bod
 
 	// body上的点在惯性系下的位置
 	Vector3d pos = CalcBodyToBaseCoordinates(model, Q, body_id, body_pos, true);
-	if(body_id == 7){ // body_id of tail is 7
-		pos[0] = 10.0 * pos[0];
-	}
+	// if(body_id == 7){ // body_id of tail is 7
+	// 	// pos[0] = 5.5 * pos[0];
+	// 	F_l *= 12.0;
+	// 	// F_d *= 5.0;
+	// }
 	
 	std::cout << "pos: " << pos.transpose() << std::endl;
+	// 确定力在惯性系下的方向
 	Vector3d F = F_l * MatWorld2Body.transpose() * (rotate_y * V_local_proj.normalized())
 			- F_d * ((MatWorld2Body.transpose() * V_local_proj).normalized());
 	// Vector3d F1 = F_l * (rotate_y * V_local_proj.normalized()) - F_d * (V_local_proj.normalized());
 	if(body_id == model.GetBodyId("left_wing")){
 		all_angle.push_back(angle_of_attack * 180 / 3.1415);
-		// Vector3d F_body = F_l * MatWorld2Body.transpose() * (rotate_y * V_local_proj.normalized())
-		// 	- F_d * ((MatWorld2Body.transpose() * V_local_proj).normalized());
 		f_x.push_back(F[0]);
 		f_z.push_back(F[2]);
 		v_x.push_back(V_local[0]);
@@ -115,10 +113,10 @@ void CalF(Model& model, const VectorNd& Q, const VectorNd& QDot, const char* bod
 		wing_d_t_y.push_back(pos[2] * F[0]);
 		wing_pos_z.push_back(pos[2]);
 	}
-	if(body_id == model.GetBodyId("tail")){
-		cd_tail.push_back(C_d);
-		cl_tail.push_back(C_l);
-	}
+	// if(body_id == model.GetBodyId("tail")){
+	// 	cd_tail.push_back(C_d);
+	// 	cl_tail.push_back(C_l);
+	// }
 	// std::cout << "F1: " << (F_l * (rotate_y * V_local_proj.normalized())).transpose() << std::endl;
 	// std::cout << "F2: " << (F_d * (V_local_proj).normalized()).transpose() << std::endl;
 	// std::cout << "F1 - F2: " << F_l * (rotate_y * V_local_proj.normalized()) - F_d * (V_local_proj.normalized()) << std::endl;
@@ -161,7 +159,7 @@ int main (int argc, char* argv[]) {
 	
 	std::vector<double> cd_wing, cl_wing, cd_tail, cl_tail, wing_l_t_y, wing_d_t_y, 
 						wing_f_x, wing_f_z, a_x, alpha_y, wing_t_y, tail_t_y, a_z, 
-						all_theta, body_f_x, body_f_z, all_angle, v_x, v_z, wing_pos_z;
+						all_theta, body_f_x, body_f_z, all_angle, v_x, v_z, wing_pos_z, tail_theta, tail_t;
 	for(double theta = 0.0; theta <= 3.14 * 2.0; theta += 3.14 * 2.0 / 50.0){
 		// double theta = 0.0;
 		all_theta.push_back(theta);
@@ -176,7 +174,9 @@ int main (int argc, char* argv[]) {
 
 		VectorNd Q = VectorNd::Zero (model->q_size);
 		Q << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-				theta1, theta2, theta3, theta4, 1.0, 1.0;
+				theta1, theta2, theta3, theta4, -0.58, 1;
+		// Q << 0.0, 0.0, 0.0, 0.0, -0.087, 0.0, 
+		// 		theta1, theta2, theta3, theta4, 1.0, 0.9962;
 
 		VectorNd QDot = VectorNd::Zero (model->qdot_size);
 		QDot << 3.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -246,6 +246,32 @@ int main (int argc, char* argv[]) {
 		alpha_y.push_back(QDDot[4]);
 		// std::cout << "QDDOT: " << QDDot.transpose() << std::endl;
 	}
+
+	for(double theta = -1.5; theta <= 1.5; theta += 0.05){
+		tail_theta.push_back(theta);
+		VectorNd Q = VectorNd::Zero (model->q_size);
+		Q << 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+				0.0, 0.0, 0.0, 0.0, theta, 1;
+		// Q << 0.0, 0.0, 0.0, 0.0, -0.087, 0.0, 
+		// 		theta1, theta2, theta3, theta4, 1.0, 0.9962;
+
+		VectorNd QDot = VectorNd::Zero (model->qdot_size);
+		QDot << 3.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+				0.0, 0.0, 0.0, 0.0, 0.0;
+
+		VectorNd Tau = VectorNd::Zero (model->qdot_size);
+		VectorNd QDDot = VectorNd::Zero (model->qdot_size);
+		std::vector<RigidBodyDynamics::Math::SpatialVector> fext;
+		fext.resize(model->mBodies.size());
+		for (unsigned int i = 0; i < fext.size(); ++i) {
+			fext[i]=RigidBodyDynamics::Math::SpatialVector::Zero();
+		}
+		CalF(*model, Q, QDot, "tail", fext, body_f_x, body_f_z, all_angle, v_x, 
+				v_z, cd_wing, cl_wing, cd_tail, cl_tail, wing_l_t_y, wing_d_t_y, wing_pos_z);
+		tail_t.push_back(fext[model->GetBodyId("tail")][1]);
+		// ForwardDynamics (*model, Q, QDot, Tau, QDDot, &fext);
+		
+	}
 	
 
 	delete model;
@@ -278,11 +304,11 @@ int main (int argc, char* argv[]) {
 	plt::subplot(2,4,7);
 	plt::plot(all_theta, cd_wing, {{"label","cd_wing"}});
 	plt::plot(all_theta, cl_wing, {{"label","cl_wing"}});
-	plt::plot(all_theta, cd_tail, {{"label","cd_tail"}});
-	plt::plot(all_theta, cl_tail, {{"label","cl_tail"}});
+	// plt::plot(all_theta, cd_tail, {{"label","cd_tail"}});
+	// plt::plot(all_theta, cl_tail, {{"label","cl_tail"}});
 	plt::legend();
 	plt::subplot(2,4,8);
-	plt::plot(all_theta, wing_pos_z, {{"label","wing_pos_z"}});
+	plt::plot(tail_theta, tail_t, {{"label","tail_t"}});
 	plt::legend();
     plt::show();
 
